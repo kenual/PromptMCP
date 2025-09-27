@@ -6,3 +6,9 @@ Prompt Library
 ```zsh
 uv run main.py
 ```
+
+## Start MCP Inspector
+
+```
+npx @modelcontextprotocol/inspector --help
+```

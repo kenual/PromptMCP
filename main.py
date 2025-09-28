@@ -163,5 +163,5 @@ if __name__ == "__main__":
     # Discover and register recipe-based prompts before starting the server
     load_prompts_from_recipes("recipes")
 
-    mcp.run(transport="streamable-http", mount_path="/mcp")
+    mcp.run(transport="streamable-http")
     # mcp.run(transport="stdio")

@@ -4,8 +4,9 @@ recipe:
   version: 1.0.0
   title: Summarization
   description: A helpful assistant to summarize article, report, or document
-  instructions: You are a senior analysis engine producing decision-ready summaries.
-  prompt: >-
+  instructions: >-
+    You are a senior analysis engine producing decision-ready summaries.
+
     Read the source text and output Markdown with EXACTLY these H3 headings:
 
 
@@ -45,15 +46,11 @@ recipe:
 
     - Flag uncertain points only in Caveats.  
 
-    - Keep total word count ≤200.  
-
-
+    - Keep total word count ≤200.
+  prompt: |-
     Summarize exclusively the content between these tags:  
-
     <!-- TEXT START -->
-
     {{content}}
-
     <!-- TEXT END -->
   extensions: []
   activities: []
@@ -63,5 +60,5 @@ recipe:
       requirement: required
       description: Article, report or document content
 isGlobal: true
-lastModified: 2025-09-28T04:42:42.229Z
+lastModified: 2025-09-28T05:14:12.519Z
 isArchived: false

@@ -1,9 +1,9 @@
 [project]
-name = "promptmcp"
+name = "PromptMCP"
 version = "0.1.0"
-description = "Add your description here"
+description = "A MCP server to serve LLM prompts"
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
-    "mcp[cli]>=1.14.1",
+    "mcp",
 ]

@@ -108,6 +108,65 @@ def _build_and_register_prompt_from_recipe(
         f"[PromptMCP] Registered prompt '{title or source_name}' from recipe '{source_name}'")
 
 
+def _build_and_register_tool_from_recipe(
+    title: str,
+    description: str,
+    instructions: str,
+    template: str,
+    parameters: List[Dict[str, Any]],
+    source_name: str,
+) -> None:
+    # Runtime function that renders the output with simple {{var}} substitutions
+    def _execute(**kwargs):
+        text_parts = []
+        if instructions and instructions.strip():
+            text_parts.append(instructions.strip())
+        text_parts.append(template)
+        text = "\n\n".join(text_parts)
+
+        # very simple templating: replace {{key}} with provided value
+        for k, v in kwargs.items():
+            text = text.replace("{{" + k + "}}", "" if v is None else str(v))
+        return text
+
+    # Build a dynamic signature so MCP exposes parameters correctly
+    sig_params = []
+    annotations: Dict[str, Any] = {}
+    for p in parameters or []:
+        key = str(p.get("key", "")).strip()
+        if not key:
+            continue
+        py_type = _coerce_type(p.get("input_type", "string"))
+        requirement = str(p.get("requirement", "required")).strip().lower()
+        desc = str(p.get("description", "")).strip()
+
+        # Required if requirement == "required", else optional with default None
+        if requirement == "required":
+            default = Field(description=desc)
+        else:
+            default = Field(default=None, description=desc)
+
+        annotations[key] = py_type
+        sig_params.append(
+            inspect.Parameter(
+                name=key,
+                kind=inspect.Parameter.POSITIONAL_OR_KEYWORD,
+                default=default,
+                annotation=py_type,
+            )
+        )
+
+    _execute.__signature__ = inspect.Signature(
+        parameters=sig_params, return_annotation=str)
+    _execute.__annotations__ = annotations
+    _execute.__name__ = f"tool_{_slugify(title or source_name)}"
+    _execute.__doc__ = description or f"Tool imported from recipe: {source_name}"
+
+    # Register with MCP
+    mcp.tool(title=title or source_name, description=description)(_execute)
+    print(
+        f"[PromptMCP] Registered tool '{title or source_name}' from recipe '{source_name}'")
+
 def _register_recipe_file(path: str) -> None:
     try:
         with open(path, "r", encoding="utf-8") as f:
@@ -132,6 +191,15 @@ def _register_recipe_file(path: str) -> None:
         return
 
     _build_and_register_prompt_from_recipe(
+        title=title,
+        description=description,
+        instructions=instructions,
+        template=template,
+        parameters=params,
+        source_name=os.path.basename(path),
+    )
+
+    _build_and_register_tool_from_recipe(
         title=title,
         description=description,
         instructions=instructions,

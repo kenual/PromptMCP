@@ -1,5 +1,5 @@
 """
-MCP Server Template
+MCP Prompt Server
 """
 
 import os
@@ -8,25 +8,12 @@ import inspect
 import re
 from typing import Any, Dict, List, Optional
 
-import yaml
-
 from mcp.server.fastmcp import FastMCP
 from pydantic import Field
-
+import yaml
 
 mcp = FastMCP("Prompt Server", stateless_http=True)
 
-
-@mcp.tool(
-    title="Echo Tool",
-    description="Echo the input text",
-)
-def echo(text: str = Field(description="The text to echo")) -> str:
-    return text
-
-
-
-# ====== Dynamic recipe discovery and prompt registration ======
 
 def _slugify(value: str) -> str:
     s = value.strip().lower()
@@ -48,16 +35,9 @@ def _coerce_type(t: Optional[str]):
     }.get(t, str)
 
 
-def _build_and_register_prompt_from_recipe(
-    title: str,
-    description: str,
-    instructions: str,
-    template: str,
-    parameters: List[Dict[str, Any]],
-    source_name: str,
-) -> None:
-    # Runtime function that renders the prompt with simple {{var}} substitutions
-    def _render(**kwargs):
+def _make_renderer(instructions: str, template: str):
+    # Returns a closure that renders text with simple {{var}} substitutions
+    def _fn(**kwargs):
         text_parts = []
         if instructions and instructions.strip():
             text_parts.append(instructions.strip())
@@ -69,6 +49,10 @@ def _build_and_register_prompt_from_recipe(
             text = text.replace("{{" + k + "}}", "" if v is None else str(v))
         return text
 
+    return _fn
+
+
+def _compute_signature(parameters: List[Dict[str, Any]]):
     # Build a dynamic signature so MCP exposes parameters correctly
     sig_params = []
     annotations: Dict[str, Any] = {}
@@ -95,20 +79,11 @@ def _build_and_register_prompt_from_recipe(
                 annotation=py_type,
             )
         )
-
-    _render.__signature__ = inspect.Signature(
-        parameters=sig_params, return_annotation=str)
-    _render.__annotations__ = annotations
-    _render.__name__ = f"prompt_{_slugify(title or source_name)}"
-    _render.__doc__ = description or f"Prompt imported from recipe: {source_name}"
-
-    # Register with MCP
-    mcp.prompt(title or source_name)(_render)
-    print(
-        f"[PromptMCP] Registered prompt '{title or source_name}' from recipe '{source_name}'")
+    return sig_params, annotations
 
 
-def _build_and_register_tool_from_recipe(
+def _build_and_register_from_recipe(
+    kind: str,
     title: str,
     description: str,
     instructions: str,
@@ -116,56 +91,32 @@ def _build_and_register_tool_from_recipe(
     parameters: List[Dict[str, Any]],
     source_name: str,
 ) -> None:
-    # Runtime function that renders the output with simple {{var}} substitutions
-    def _execute(**kwargs):
-        text_parts = []
-        if instructions and instructions.strip():
-            text_parts.append(instructions.strip())
-        text_parts.append(template)
-        text = "\n\n".join(text_parts)
+    # Create renderer closure
+    fn = _make_renderer(instructions, template)
 
-        # very simple templating: replace {{key}} with provided value
-        for k, v in kwargs.items():
-            text = text.replace("{{" + k + "}}", "" if v is None else str(v))
-        return text
+    # Build signature and annotations
+    sig_params, annotations = _compute_signature(parameters)
 
-    # Build a dynamic signature so MCP exposes parameters correctly
-    sig_params = []
-    annotations: Dict[str, Any] = {}
-    for p in parameters or []:
-        key = str(p.get("key", "")).strip()
-        if not key:
-            continue
-        py_type = _coerce_type(p.get("input_type", "string"))
-        requirement = str(p.get("requirement", "required")).strip().lower()
-        desc = str(p.get("description", "")).strip()
-
-        # Required if requirement == "required", else optional with default None
-        if requirement == "required":
-            default = Field(description=desc)
-        else:
-            default = Field(default=None, description=desc)
-
-        annotations[key] = py_type
-        sig_params.append(
-            inspect.Parameter(
-                name=key,
-                kind=inspect.Parameter.POSITIONAL_OR_KEYWORD,
-                default=default,
-                annotation=py_type,
-            )
-        )
-
-    _execute.__signature__ = inspect.Signature(
+    # Apply function metadata
+    fn.__signature__ = inspect.Signature(
         parameters=sig_params, return_annotation=str)
-    _execute.__annotations__ = annotations
-    _execute.__name__ = f"tool_{_slugify(title or source_name)}"
-    _execute.__doc__ = description or f"Tool imported from recipe: {source_name}"
+    fn.__annotations__ = annotations
+
+    prefix = "prompt" if kind == "prompt" else "tool"
+    capital = "Prompt" if kind == "prompt" else "Tool"
+    fn.__name__ = f"{prefix}_{_slugify(title or source_name)}"
+    fn.__doc__ = description or f"{capital} imported from recipe: {source_name}"
 
     # Register with MCP
-    mcp.tool(title=title or source_name, description=description)(_execute)
-    print(
-        f"[PromptMCP] Registered tool '{title or source_name}' from recipe '{source_name}'")
+    if kind == "prompt":
+        mcp.prompt(title or source_name)(fn)
+        print(
+            f"[PromptMCP] Registered prompt '{title or source_name}' from recipe '{source_name}'")
+    else:
+        mcp.tool(title=title or source_name, description=description)(fn)
+        print(
+            f"[PromptMCP] Registered tool '{title or source_name}' from recipe '{source_name}'")
+
 
 def _register_recipe_file(path: str) -> None:
     try:
@@ -190,7 +141,8 @@ def _register_recipe_file(path: str) -> None:
         print(f"[PromptMCP] Skipping '{path}': recipe.prompt is missing/empty")
         return
 
-    _build_and_register_prompt_from_recipe(
+    _build_and_register_from_recipe(
+        kind="prompt",
         title=title,
         description=description,
         instructions=instructions,
@@ -199,7 +151,8 @@ def _register_recipe_file(path: str) -> None:
         source_name=os.path.basename(path),
     )
 
-    _build_and_register_tool_from_recipe(
+    _build_and_register_from_recipe(
+        kind="prompt",
         title=title,
         description=description,
         instructions=instructions,

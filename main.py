@@ -7,12 +7,17 @@ import glob
 import inspect
 import re
 from typing import Any, Dict, List, Optional
+from enum import StrEnum
 
 from mcp.server.fastmcp import FastMCP
 from pydantic import Field
 import yaml
 
 mcp = FastMCP("Prompt Server", stateless_http=True)
+
+class MCPPrimitives(StrEnum):
+    prompt = "prompt"
+    tool = "tool"
 
 
 def _slugify(value: str) -> str:
@@ -83,7 +88,7 @@ def _compute_signature(parameters: List[Dict[str, Any]]):
 
 
 def _build_and_register_from_recipe(
-    kind: str,
+    kind: MCPPrimitives,
     title: str,
     description: str,
     instructions: str,
@@ -102,13 +107,13 @@ def _build_and_register_from_recipe(
         parameters=sig_params, return_annotation=str)
     fn.__annotations__ = annotations
 
-    prefix = "prompt" if kind == "prompt" else "tool"
-    capital = "Prompt" if kind == "prompt" else "Tool"
+    prefix = kind.value
+    capital = "Prompt" if kind is MCPPrimitives.prompt else "Tool"
     fn.__name__ = f"{prefix}_{_slugify(title or source_name)}"
     fn.__doc__ = description or f"{capital} imported from recipe: {source_name}"
 
     # Register with MCP
-    if kind == "prompt":
+    if kind is MCPPrimitives.prompt:
         mcp.prompt(title or source_name)(fn)
         print(
             f"[PromptMCP] Registered prompt '{title or source_name}' from recipe '{source_name}'")
@@ -142,7 +147,7 @@ def _register_recipe_file(path: str) -> None:
         return
 
     _build_and_register_from_recipe(
-        kind="prompt",
+        kind=MCPPrimitives.prompt,
         title=title,
         description=description,
         instructions=instructions,
@@ -152,7 +157,7 @@ def _register_recipe_file(path: str) -> None:
     )
 
     _build_and_register_from_recipe(
-        kind="prompt",
+        kind=MCPPrimitives.tool,
         title=title,
         description=description,
         instructions=instructions,

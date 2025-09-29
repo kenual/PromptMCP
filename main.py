@@ -2,16 +2,19 @@
 MCP Prompt Server
 """
 
-import os
 import glob
 import inspect
+import logging
+import os
 import re
-from typing import Any, Dict, List, Optional
 from enum import StrEnum
+from typing import Any, Dict, List, Optional
 
 from mcp.server.fastmcp import FastMCP
 from pydantic import Field
 import yaml
+
+logger = logging.getLogger("PromptMCP")
 
 mcp = FastMCP("Prompt Server", stateless_http=True)
 
@@ -21,6 +24,20 @@ class MCPPrimitives(StrEnum):
 
 
 def _slugify(value: str) -> str:
+    """
+    Convert an arbitrary string into a lowercase, underscore-delimited slug.
+
+    - Lowercases the input
+    - Replaces runs of non-alphanumeric characters with a single underscore
+    - Collapses repeated underscores and trims leading/trailing underscores
+    Returns "prompt" if the normalized value would be empty.
+
+    Args:
+        value: Input string to normalize.
+
+    Returns:
+        A safe slug composed of [a-z0-9_] characters.
+    """
     s = value.strip().lower()
     s = re.sub(r"[^a-z0-9]+", "_", s)
     s = re.sub(r"_+", "_", s).strip("_")
@@ -28,6 +45,22 @@ def _slugify(value: str) -> str:
 
 
 def _coerce_type(t: Optional[str]):
+    """
+    Map a string type name to a Python type object.
+
+    Supported values (case-insensitive):
+    - "string" -> str (default)
+    - "number" -> float
+    - "integer"/"int" -> int
+    - "float" -> float
+    - "boolean"/"bool" -> bool
+
+    Args:
+        t: Type name from a recipe; None or unknown values default to "string".
+
+    Returns:
+        The corresponding Python type object.
+    """
     t = (t or "string").strip().lower()
     return {
         "string": str,
@@ -41,6 +74,21 @@ def _coerce_type(t: Optional[str]):
 
 
 def _make_renderer(instructions: str, template: str):
+    """
+    Create a simple renderer closure that interpolates variables into a template.
+
+    The returned function accepts keyword arguments and performs naive template
+    substitution by replacing occurrences of {{key}} with the provided value
+    (or an empty string if the value is None). If non-empty, instructions are
+    prepended above the template separated by a blank line.
+
+    Args:
+        instructions: Optional text placed before the template when rendering.
+        template: The template text containing {{variable}} placeholders.
+
+    Returns:
+        A callable that renders the final string given keyword arguments.
+    """
     # Returns a closure that renders text with simple {{var}} substitutions
     def _fn(**kwargs):
         text_parts = []
@@ -58,6 +106,26 @@ def _make_renderer(instructions: str, template: str):
 
 
 def _compute_signature(parameters: List[Dict[str, Any]]):
+    """
+    Compute inspect.Parameter objects and type annotations from recipe parameters.
+
+    Each parameter dict may include:
+    - key: Name of the argument.
+    - input_type: One of the supported scalar types (see _coerce_type).
+    - requirement: "required" to mark as required; anything else treated as optional.
+    - description: Human-readable description used in the Field metadata.
+
+    Required parameters receive Field(description=...), optional receive
+    Field(default=None, description=...).
+
+    Args:
+        parameters: List of parameter dicts from a recipe.
+
+    Returns:
+        A tuple (sig_params, annotations) where:
+        - sig_params: List[inspect.Parameter] suitable for building a Signature.
+        - annotations: Dict[name, type] for __annotations__.
+    """
     # Build a dynamic signature so MCP exposes parameters correctly
     sig_params = []
     annotations: Dict[str, Any] = {}
@@ -96,6 +164,29 @@ def _build_and_register_from_recipe(
     parameters: List[Dict[str, Any]],
     source_name: str,
 ) -> None:
+    """
+    Build a callable from a recipe and register it with the MCP server as either
+    a Prompt or a Tool.
+
+    The function:
+    - Creates a renderer closure that performs simple {{var}} substitutions.
+    - Computes a dynamic function signature from the parameter definitions so
+      FastMCP can expose typed parameters.
+    - Attaches metadata (name, signature, annotations, docstring).
+    - Registers the callable as a prompt or tool and prints a registration note.
+
+    Args:
+        kind: Whether to register as a prompt or a tool.
+        title: Human-friendly title from the recipe (used for registration).
+        description: Description used for the registered callable/docstring.
+        instructions: Optional preamble text prepended when rendering.
+        template: Template text containing {{placeholder}} tokens.
+        parameters: List of parameter definitions from the recipe.
+        source_name: Original filename of the recipe, used in messages/metadata.
+
+    Returns:
+        None. Registration is performed as a side effect.
+    """
     # Create renderer closure
     fn = _make_renderer(instructions, template)
 
@@ -115,20 +206,31 @@ def _build_and_register_from_recipe(
     # Register with MCP
     if kind is MCPPrimitives.prompt:
         mcp.prompt(title or source_name)(fn)
-        print(
-            f"[PromptMCP] Registered prompt '{title or source_name}' from recipe '{source_name}'")
+        logger.info("Registered prompt '%s' from recipe '%s'", title or source_name, source_name)
     else:
         mcp.tool(title=title or source_name, description=description)(fn)
-        print(
-            f"[PromptMCP] Registered tool '{title or source_name}' from recipe '{source_name}'")
+        logger.info("Registered tool '%s' from recipe '%s'", title or source_name, source_name)
 
 
 def _register_recipe_file(path: str) -> None:
+    """
+    Load a single YAML recipe file and register both a prompt and a tool.
+
+    The YAML is expected to contain a top-level "recipe" mapping with keys such as
+    title/name/filename, description, instructions, prompt, and parameters.
+    If the prompt/template text is missing or empty, the file is skipped.
+
+    Args:
+        path: Path to the YAML recipe file.
+
+    Returns:
+        None. Successful parsing results in registration side effects.
+    """
     try:
         with open(path, "r", encoding="utf-8") as f:
             data = yaml.safe_load(f) or {}
     except Exception as e:
-        print(f"[PromptMCP] Failed to load YAML '{path}': {e}")
+        logger.exception("Failed to load YAML '%s'", path)
         return
 
     # Expected structure based on provided example
@@ -143,7 +245,7 @@ def _register_recipe_file(path: str) -> None:
     params = recipe.get("parameters") or []
 
     if not template:
-        print(f"[PromptMCP] Skipping '{path}': recipe.prompt is missing/empty")
+        logger.warning("Skipping '%s': recipe.prompt is missing/empty", path)
         return
 
     _build_and_register_from_recipe(
@@ -168,9 +270,21 @@ def _register_recipe_file(path: str) -> None:
 
 
 def load_prompts_from_recipes(dir_path: str = "recipes") -> None:
+    """
+    Discover and register prompts/tools from recipe files in a directory.
+
+    Scans the directory for *.yaml and *.yml files, loading each via
+    _register_recipe_file. Prints diagnostic messages for missing directories
+    and empty results.
+
+    Args:
+        dir_path: Directory containing recipe files. Defaults to "recipes".
+
+    Returns:
+        None.
+    """
     if not os.path.isdir(dir_path):
-        print(
-            f"[PromptMCP] Recipes directory not found: {dir_path} (skipping)")
+        logger.warning("Recipes directory not found: %s (skipping)", dir_path)
         return
 
     pattern_yaml = os.path.join(dir_path, "*.yaml")
@@ -178,7 +292,7 @@ def load_prompts_from_recipes(dir_path: str = "recipes") -> None:
     files = sorted(glob.glob(pattern_yaml) + glob.glob(pattern_yml))
 
     if not files:
-        print(f"[PromptMCP] No recipe files found under {dir_path}")
+        logger.warning("No recipe files found under %s", dir_path)
         return
 
     for fp in files:
@@ -187,6 +301,9 @@ def load_prompts_from_recipes(dir_path: str = "recipes") -> None:
 
 if __name__ == "__main__":
     # Discover and register recipe-based prompts before starting the server
+    if not logging.getLogger().hasHandlers():
+        logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s [%(name)s] %(message)s")
+
     load_prompts_from_recipes("recipes")
 
     mcp.run(transport="streamable-http")

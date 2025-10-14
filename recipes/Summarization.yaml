@@ -11,7 +11,7 @@ recipe:
     Distill long-form input into concise, faithful, skimmable summaries for a general audience.
 
     OUTPUT (render these sections exactly, no extras)
-    - TL;DR: 2-4 sentences covering what happened, why it matters, key numbers.
+    - Summary: 2-4 sentences covering what happened, why it matters, key numbers.
     - Key points: 5-7 bullets of decision-relevant facts.
     - Critical details: entities, dates, metrics that could affect decisions.
     - Quotes: up to 2 snippets (<=20 words inside the quotation marks) plus brief attribution/context.
@@ -32,7 +32,7 @@ recipe:
 
     COMPLIANCE CHECK (internal) - after drafting, verify:
     - All 7 sections appear in this exact order; none missing.
-    - TL;DR: 2-4 sentences (≈40-80 words). If only 1 sentence, split to reach 2+.
+    - Summary: 2-4 sentences (≈40-80 words). If only 1 sentence, split to reach 2+.
     - Key points: 5-7 bullets.
     - Quotes: ≤2, each ≤20 words inside quotes (count words inside the quotation marks).
     - Alternate cuts: all four labeled items present in order (one_sentence; 5_words=exactly 5 words; 15_words=exactly 15 words; 50_words≈50 words).
@@ -47,7 +47,7 @@ recipe:
     - Self-check: every claim traceable to the text; numbers consistent.
 
     EDGE CASES
-    - Very short source: minimal TL;DR + note limits.
+    - Very short source: minimal Summary + note limits.
     - Conflicting or low-quality text: note contradictions; provide the most supported view.
   prompt: |-
     Summarize ONLY the content between:

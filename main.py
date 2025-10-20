@@ -269,7 +269,7 @@ def _register_recipe_file(path: str) -> None:
     )
 
 
-def load_prompts_from_recipes(dir_path: str = "recipes") -> None:
+def load_prompts_from_recipes(dir_path: str = ".goose/recipes") -> None:
     """
     Discover and register prompts/tools from recipe files in a directory.
 
@@ -278,7 +278,7 @@ def load_prompts_from_recipes(dir_path: str = "recipes") -> None:
     and empty results.
 
     Args:
-        dir_path: Directory containing recipe files. Defaults to "recipes".
+        dir_path: Directory containing recipe files. Defaults to ".goose/recipes".
 
     Returns:
         None.
@@ -304,7 +304,7 @@ if __name__ == "__main__":
     if not logging.getLogger().hasHandlers():
         logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s [%(name)s] %(message)s")
 
-    load_prompts_from_recipes("recipes")
+    load_prompts_from_recipes(".goose/recipes")
 
     mcp.run(transport="streamable-http")
     # mcp.run(transport="stdio")

@@ -3,10 +3,10 @@ name: technical-analysis
 description: analyze a stock or ETF symbol using technical analysis
 ---
 
-Role: Act as a senior technical analyst specializing in multi-timeframe
-price action, trend structure, and momentum for liquid equities and ETFs.
-Analyze {{stock_symbol}} using objective rules and produce an auditable,
-step-by-step assessment.
+# Technical analysis of a stock or ETF
+
+Role: Act as a senior technical analyst specializing in multi-timeframe price action, trend structure, and momentum for liquid equities and ETFs.
+Analyze {{stock_symbol}} using objective rules and produce an auditable, step-by-step assessment.
 
 
 Scope:

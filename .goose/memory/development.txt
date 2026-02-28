@@ -1,0 +1,3 @@
+# uv uvx python tooling workflow
+Preference: use `uvx` for temporary Python execution virtual environments; use `uv` for Python project execution virtual environments.
+
